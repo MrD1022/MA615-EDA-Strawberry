@@ -1,0 +1,135 @@
+---
+title: "MA615-EDA-Strawberry"
+author: "Mingrui Du"
+format: pdf
+editor: visual
+---
+
+## Overview
+
+### Objective
+
+The objective of this assignment is to practice data cleaning then exploratory data analysis(EDA) on data set "Strawberry"
+
+```{r}
+#| echo: false
+suppressMessages(library(dplyr))
+library(knitr)  
+#library(kableExtra)
+library(tidyverse)
+library(stringr)
+```
+
+### Data acquisition
+
+"Strawberry" selected from [USDA NASS](https://quickstats.nass.usda.gov/) , original data stored [here](https://quickstats.nass.usda.gov/results/45FBC825-B104-38E2-9802-839F5F3C7036)
+
+### The Data
+
+The original data set consists of 21 columns, among which "Week.Ending","Ag.District", "Ag.District.Code","County","County.ANSI","Zip.Code","Region","Watershed" have only NA elements, and "Geo.Level"(=STATE), "watershed_code"(=0),"Commodity"(=STRAWBERRIES) are single-value columns.
+
+Column "Program" contains two sources of data: CENSUS and SURVEY.
+
+"Data.Item" is a concatenation of six mixed columns:
+
+-   Commodity = STRAWBERRIES in our case
+
+-   class_desc: recording a physical attribute (not recorded in this strawberry case)
+
+-   prodn_practice_desc: a method of production or action taken on the commodity(e.g., IRRIGATED, ORGANIC, ON FEED)
+
+-   util_practice_desc: Utilizations (e.g., GRAIN, FROZEN, SLAUGHTER) or marketing channels (e.g., FRESH MARKET, PROCESSING, RETAIL)
+
+-   statisticcat_desc: The aspect of a commodity being measured (e.g., AREA HARVESTED, PRICE RECEIVED, INVENTORY, SALES).
+
+-   unit.
+
+"Domain":
+
+-   domain = ORGANIC STATUS for organic commodity;
+
+-   for chemical usage data, the domain describes the type of chemical applied to the commodity(e.g., FUNGICIDE, HERBICIDE, INSECTICIDE, FERTILIZER, OTHER);
+
+-   domain = TOTAL will have no further breakouts.
+
+"Domain.Category" records categories or partitions within a domain. For instance, the specific chemical taken for a commodity, along with PC code.
+
+"Value" contains published data value or [suppression reason code](https://quickstats.nass.usda.gov/src/glossary.pdf).
+
+### Data assessment
+
+"Data.Item" compresses multiple columns into one; "Domain.Category" contains various chemicals(and PC codes) that require extraction; "Value" involves numbers in different units, as well as abbreviation code and initial (NA), so does "CV". 
+
+We'll first delete single value columns then split dataset into CENSUS and SURVEY, since organic commodity lies in CENSUS and chemical usage stored in the latter. 
+
+### Initial questions
+
+-   Initial questions about strawberries, the data, and about the work you are undertaking. Write these before you begin working.
+
+
+
+## Data cleaning and organization
+
+<!-- Remove single-value columns -->
+
+```{r}
+#| echo: false
+strawberry <- read.csv("strawberry.csv", header = TRUE)
+strwb <- strawberry ## copy of raw data
+## drop single value columns
+strawberry <- strawberry %>% 
+              select_if(~!all(is.na(.))) %>% 
+              select(-Geo.Level, -watershed_code, -Commodity)
+```
+
+<!-- Separate CENSUS and SURVEY -->
+
+```{r}
+## split CENSUS and SURVEY
+strwb_census <- strawberry |> filter(Program == "CENSUS")
+strwb_survey <- strawberry |> filter(Program == "SURVEY")
+#nrow(strawberry) == (nrow(strwb_census) + nrow(strwb_survey))
+```
+
+<!-- Start with CENSUS -->
+<!-- Clean composite column: Data.Item -->
+<!-- Column separators: , and - -->
+
+```{r}
+## No need to deal with Domain.Category in CENSUS as it's single value.
+#unique(strwb_census$Domain.Category)
+#unique(strwb_census$Domain)
+
+## Seperate Data.Item into 4 columns at most, the first set to be commodity(STRAWBERRIES)
+#unique(strwb_census$Data.Item)
+strwb_census <- strwb_census |>
+                separate_wider_delim(cols = `Data.Item`,
+                                     delim = ",",
+                                     names = c("Commodity", ## STRAWBERRIES
+                                               "temp1",     
+                                               "temp2",
+                                               "temp3"),
+                                     too_many = "error",
+                                     too_few = "align_start")
+strwb_census$temp1 <- trimws(strwb_census$temp1)
+strwb_census$temp2 <- trimws(strwb_census$temp2)
+strwb_census$temp3 <- trimws(strwb_census$temp3)
+## Seperate temp1 into Production Practice(prodn_practice_desc) and prop_acct
+#unique(strwb_census$temp1)
+#strwb_census |> distinct(temp1)
+strwb_census <- strwb_census |>
+  separate_wider_delim(  cols = temp1,
+                         delim = " - ",
+                         names = c("prodn_practice_desc",
+                                   "prop_acct"),
+                         too_many = "error",
+                         too_few = "align_start"
+                       )
+#unique(strwb_census$prodn_practice_desc)
+#unique(strwb_census$prop_acct)
+### We can see now NA appears while cleaning data.
+
+```
+
+
+## References
