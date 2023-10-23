@@ -296,16 +296,16 @@ d <- data.frame(dcomma(strwb_survey$Value))
 strwb_survey$Value <- d[,1]
 strwb_survey$fn <- d[,2]
 
-## Separate values by units($, CWT, TONS, LB, etc.)
-strwb_survey$`Value($)` <- ifelse(strwb_survey$unit_desc == "$", strwb_survey$Value, "")
-strwb_survey$`Value(CWT)` <- ifelse(strwb_survey$unit_desc == "CWT", strwb_survey$Value, "")
-strwb_survey$`Value($/CWT)` <- ifelse(strwb_survey$unit_desc == "$ / CWT", strwb_survey$Value, "")
-strwb_survey$`Value(TONS)` <- ifelse(strwb_survey$unit_desc == "TONS", strwb_survey$Value, "")
-strwb_survey$`Value(LB)` <- ifelse(strwb_survey$unit_desc == "LB", strwb_survey$Value, "")
-strwb_survey$`Value(LB/ACRE/APP)` <- ifelse(strwb_survey$unit_desc == "LB / ACRE / APPLICATION", strwb_survey$Value, "")
-strwb_survey$`Value(LB/ACRE/YR)` <- ifelse(strwb_survey$unit_desc == "LB / ACRE / YEAR", strwb_survey$Value, "")
-strwb_survey$`Value(NUMBER)` <- ifelse(strwb_survey$unit_desc == "NUMBER", strwb_survey$Value, "")
-strwb_survey$`Value($/TON)` <- ifelse(strwb_survey$unit_desc == "$ / TON", strwb_survey$Value, "")
+# ## Separate values by units($, CWT, TONS, LB, etc.)
+# strwb_survey$`Value($)` <- ifelse(strwb_survey$unit_desc == "$", strwb_survey$Value, "")
+# strwb_survey$`Value(CWT)` <- ifelse(strwb_survey$unit_desc == "CWT", strwb_survey$Value, "")
+# strwb_survey$`Value($/CWT)` <- ifelse(strwb_survey$unit_desc == "$ / CWT", strwb_survey$Value, "")
+# strwb_survey$`Value(TONS)` <- ifelse(strwb_survey$unit_desc == "TONS", strwb_survey$Value, "")
+# strwb_survey$`Value(LB)` <- ifelse(strwb_survey$unit_desc == "LB", strwb_survey$Value, "")
+# strwb_survey$`Value(LB/ACRE/APP)` <- ifelse(strwb_survey$unit_desc == "LB / ACRE / APPLICATION", strwb_survey$Value, "")
+# strwb_survey$`Value(LB/ACRE/YR)` <- ifelse(strwb_survey$unit_desc == "LB / ACRE / YEAR", strwb_survey$Value, "")
+# strwb_survey$`Value(NUMBER)` <- ifelse(strwb_survey$unit_desc == "NUMBER", strwb_survey$Value, "")
+# strwb_survey$`Value($/TON)` <- ifelse(strwb_survey$unit_desc == "$ / TON", strwb_survey$Value, "")
 ```
 
 <!-- Domain -->
@@ -326,36 +326,13 @@ strwb_survey$temp23 <- trimws(strwb_survey$temp23)
 strwb_survey$temp22 <- trimws(strwb_survey$temp22)
 ```
 
-<!-- Domain Category & PC code extraction -->
+<!-- Extract PC code from Domain.Category -->
 
 ```{r}
-strwb_survey <- strwb_survey |>
-  separate_wider_delim(  cols = `Domain.Category`,
-                         delim = ",",
-                         names = c("temp42",
-                                 "temp43",
-                                 "temp44",
-                                 "temp45"),
-                         too_many = "error",
-                         too_few = "align_start"
-                       )
 
-### Extract PC codes from temp43-45
-strwb_survey$PC_t43 <- str_extract_all(strwb_survey$temp43, "= \\d+")
-strwb_survey$PC_t44 <- str_extract_all(strwb_survey$temp44, "= \\d+")
-strwb_survey$PC_t45 <- str_extract_all(strwb_survey$temp45, "= \\d+")
-strwb_survey$PC_t43 <- gsub("= ", "", strwb_survey$PC_t43)
-strwb_survey$PC_t44 <- gsub("= ", "", strwb_survey$PC_t44)
-strwb_survey$PC_t45 <- gsub("= ", "", strwb_survey$PC_t45)
-### substitute NAs
-strwb_survey$PC_t43[is.na(strwb_survey$PC_t43)] <- ""
-strwb_survey$PC_t44[is.na(strwb_survey$PC_t44)] <- ""
-strwb_survey$PC_t45[is.na(strwb_survey$PC_t45)] <- ""
-### combine t43-45 into PC code
-
-strwb_survey <- strwb_survey |> unite(PC_t43, PC_t44, col="PC code", sep="")
-strwb_survey <- strwb_survey |> unite(`PC code`, PC_t45, col="PC code", sep="")
-strwb_survey$`PC code` <- gsub("character(0)", "", strwb_survey$`PC code`)
+strwb_survey$PC <- str_extract_all(strwb_survey$Domain.Category, "= \\d+", simplify = T)
+strwb_survey$PC <- gsub("= ", "", strwb_survey$PC)
+strwb_survey$PC <- strwb_survey$PC[,1]
 
 ```
 
@@ -365,26 +342,46 @@ strwb_survey$`PC code` <- gsub("character(0)", "", strwb_survey$`PC code`)
 library(httr)
 library(jsonlite)
 
-cas <- function(c){
-    path <- paste0("https://ordspub.epa.gov/ords/pesticides/apprilapi/?q=%7b%22ais%22:%7b%22$instr%22:%22",c,"%22%7d%7d")
+get_cas <- function(PC){
+    PC <- sprintf("%06d", as.numeric(PC))
+    path <- paste0("https://ordspub.epa.gov/ords/pesticides/apprilapi/?q=%7b%22ais%22:%7b%22$instr%22:%22", PC,"%22%7d%7d")
     r <- GET(url = path)
-    status_code(r)
-    str(content(r))
     r_text <- content(r, as = "text", encoding = "UTF-8")
-    df <- fromJSON(r_text,flatten = TRUE)
+    df <- fromJSON(r_text, flatten = TRUE)
+    df_strwb <- df$items[grepl("Strawberries", df$items$sites, fixed=T),]
+    ais <- df_strwb$ais[1]
+    pattern <- "\\(([^A-Za-z]+)\\/([0-9-]+)\\)"
+    text <- ais
+    matches <- regmatches(text, gregexpr(pattern, text))
+    cas <- sapply(matches, function(x) gsub(".*\\/([0-9-]+)\\)", "\\1", x)) 
+    if (is.character(cas)) {
+        return(cas[1])
+} 
+    else {
+        return("can't find")
 }
+}
+## Create a dictionary for PC code to CAS num
+PC <- unique(strwb_survey$PC)[-1]
+n = length(PC)
+dic <- data.frame(PC, CAS = rep(NA,n))
 
+for(i in 1:n){
+   dic$CAS[i] <- get_cas(PC[i])
+}
+dic$CAS[130] <- "can't find"
+
+strwb_survey <- left_join(strwb_survey, dic, by= "PC")
 ```
 
-
-<!-- Separate survey into chem and market(mkt) -->
+<!-- CAS number to toxicity class -->
 
 ```{r}
-strwb_survey_chem <- strwb_survey |> filter((temp22 == "CHEMICAL") | (temp42 == "CHEMICAL"))
-strwb_survey_mkt <- strwb_survey |> filter(!((temp22 == "CHEMICAL") | (temp42 == "CHEMICAL")))
-strwb_survey_mkt <- strwb_survey_mkt %>% select_if(~length(unique(.)) > 1)
-strwb_survey_chem <- strwb_survey_chem %>% select_if(~length(unique(.)) > 1)
-#strwb_survey |> distinct(temp45)
+# strwb_survey_chem <- strwb_survey |> filter((temp22 == "CHEMICAL") | (temp42 == "CHEMICAL"))
+# strwb_survey_mkt <- strwb_survey |> filter(!((temp22 == "CHEMICAL") | (temp42 == "CHEMICAL")))
+# strwb_survey_mkt <- strwb_survey_mkt %>% select_if(~length(unique(.)) > 1)
+# strwb_survey_chem <- strwb_survey_chem %>% select_if(~length(unique(.)) > 1)
+# #strwb_survey |> distinct(temp45)
 ```
 
 
