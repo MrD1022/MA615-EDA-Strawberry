@@ -58,15 +58,13 @@ Column "Program" contains two sources of data: CENSUS and SURVEY.
 
 ### Data assessment
 
-"Data.Item" compresses multiple columns into one; "Domain.Category" contains various chemicals(and PC codes) that require extraction; "Value" involves numbers in different units, as well as abbreviation code and initial (NA), so does "CV". 
+"Data.Item" compresses multiple columns into one; "Domain.Category" contains various chemicals(and PC codes) that require extraction; "Value" involves numbers in different units, as well as abbreviation codes, so does "CV".
 
-We'll first delete single value columns then split dataset into CENSUS and SURVEY, since organic commodity lies in CENSUS and chemical usage stored in the latter. 
+Here I first delete single value columns then split dataset into CENSUS and SURVEY, since organic commodity lies in CENSUS and chemical usage stored in the latter.  
 
 ### Initial questions
 
 -   Initial questions about strawberries, the data, and about the work you are undertaking. Write these before you begin working.
-
-
 
 ## Data cleaning and organization
 
@@ -92,7 +90,9 @@ strwb_survey <- strawberry |> filter(Program == "SURVEY")
 ```
 
 <!-- Start with CENSUS -->
+
 <!-- Clean composite column: Data.Item -->
+
 <!-- Column separators: , and - -->
 
 ```{r}
@@ -114,7 +114,8 @@ strwb_census <- strwb_census |>
 strwb_census$temp1 <- trimws(strwb_census$temp1)
 strwb_census$temp2 <- trimws(strwb_census$temp2)
 strwb_census$temp3 <- trimws(strwb_census$temp3)
-## Seperate temp1 into Production Practice(prodn_practice_desc) and prop_acct
+
+## Separate temp1 into Production Practice(prodn_practice_desc) and prop_acct
 #unique(strwb_census$temp1)
 #strwb_census |> distinct(temp1)
 strwb_census <- strwb_census |>
@@ -129,7 +130,265 @@ strwb_census <- strwb_census |>
 #unique(strwb_census$prop_acct)
 ### We can see now NA appears while cleaning data.
 
+## Separate temp2 into marketing channels(Fresh Market,Processing) and units(unit_desc)
+strwb_census <- strwb_census |> mutate(`Fresh Market` = temp2, .after = temp2)
+strwb_census$`Fresh Market` <- strwb_census$`Fresh Market` |> 
+                                str_replace( "^MEA.*", "")|> 
+                                str_replace( "^P.*", "")
+strwb_census$`Fresh Market`[is.na(strwb_census$`Fresh Market`)] <- ""
+strwb_census$temp2 <- strwb_census$temp2 |> str_replace("^F.*", "")
+strwb_census$`Fresh Market` <- strwb_census$`Fresh Market` |> str_replace("^FRESH MARKET - ", "")
+#unique(strwb_census$temp2)
+strwb_census <- strwb_census |> mutate(`Processing` = temp2, .after = temp2)
+strwb_census$`Processing` <- strwb_census$`Processing` |> 
+                                str_replace( "^MEA.*", "")
+strwb_census$`Processing`[is.na(strwb_census$`Processing`)] <- ""
+strwb_census$temp2 <- strwb_census$temp2 |> str_replace("^P.*", "")
+strwb_census$`Processing` <- strwb_census$`Processing` |> str_replace("^PROCESSING - ", "")
+#unique(strwb_census$temp2)
+#unique(strwb_census$Processing)
+strwb_census$prop_acct[is.na(strwb_census$prop_acct)] <- "" 
+strwb_census$temp2[is.na(strwb_census$temp2)] <- "" 
+strwb_census$temp3[is.na(strwb_census$temp3)] <- "" 
+
+## Now combine temp2 and temp3 into a column for units
+strwb_census <- strwb_census |> unite(temp2, temp3, col="unit_desc", sep="")
+#unique(strwb_census$unit_desc)
+strwb_census$unit_desc <- strwb_census$unit_desc |> str_replace("^MEASURED IN ", "")
+## These separated column have no NA inside
+#unique(!is.na(strwb_census$unit_desc))
+#unique(!is.na(strwb_census$prop_acct))
+#unique(!is.na(strwb_census$`Fresh Market`))
+#unique(!is.na(strwb_census$Processing))
+
+## Remove single-value columns: 
+# Program(CENSUS), Commodity(STRAWBERRIES), prodn_practice_desc(ORGANIC), Domain(ORGANIC STATUS), Domain.Category(ORGANIC STATUS: (NOP USDA CERTIFIED))
+strwb_census <- strwb_census %>% select_if(~length(unique(.)) > 1)
+
 ```
+
+<!-- Format Value column: remove comma in numbers and reserve footnotes-->
+
+```{r}
+## function to remove comma in numbers
+dcomma <- function(c){
+  suppressWarnings({
+  xnew = as.numeric(gsub(",", "", c))
+  fns = unique(c[is.na(xnew)])
+  vtran = list("new_vec" = xnew, "footnotes" = fns)
+  return(vtran)
+  })
+}
+c <- data.frame(dcomma(strwb_census$Value))
+strwb_census$Value <- c[,1]
+strwb_census$fn <- c[,2]
+
+## Separate values by units($, CWT)
+strwb_census$Value_USD <- ifelse(strwb_census$unit_desc == "$", strwb_census$Value, "")
+strwb_census$Value_CWT <- ifelse(strwb_census$unit_desc == "CWT", strwb_census$Value, "")
+
+# data_USD <- strwb_census |>
+#   select(c(Year, State, `Fresh Market`, unit_desc, Value)) |>
+#   filter((unit_desc == '$') & (`Fresh Market` == 'SALES') & (Value != "(D)"))
+
+```
+
+<!-- SURVEY -->
+<!-- Data.Item -->
+```{r}
+strwb_survey <- strwb_survey |> 
+  separate_wider_delim(  cols = `Data.Item`,
+                         delim = ",",
+                         names = c("temp1",
+                                 "temp2",
+                                 "temp3",
+                                 "temp4"),
+                         too_many = "error",
+                         too_few = "align_start"
+                       )
+
+strwb_survey <- strwb_survey |>
+  separate_wider_delim(  cols = temp1,
+                         delim = " - ",
+                         names = c("Commodity",
+                                 "temp1b"),
+                         too_many = "error",
+                         too_few = "align_start"
+                       )
+### delete head & tail spaces
+strwb_survey$temp4 <- trimws(strwb_survey$temp4)
+strwb_survey$temp2 <- trimws(strwb_survey$temp2)
+strwb_survey$temp3 <- trimws(strwb_survey$temp3)
+
+## Divide Data.Item into "Fresh Market"  "Processing" "Bearing" "Utilized"
+### Fresh Market
+strwb_survey <- strwb_survey |> mutate(`Fresh Market` = temp2, .after = temp2)
+strwb_survey$`Fresh Market` <- strwb_survey$`Fresh Market` |> 
+                                str_replace( "^MEA.*", "") |> 
+                                str_replace( "^P.*", "") |>
+                                str_replace( "^N.*", "") |>
+                                str_replace( "^U.*", "") |>
+                                str_replace( "^B.*", "") 
+  
+strwb_survey$`Fresh Market`[is.na(strwb_survey$`Fresh Market`)] <- ""
+strwb_survey$temp2 <- strwb_survey$temp2 |> str_replace("^F.*", "")
+strwb_survey$`Fresh Market` <- strwb_survey$`Fresh Market` |> str_replace("^FRESH MARKET - ", "")
+### Processing
+strwb_survey <- strwb_survey |> mutate(Processing = temp2, .after = temp2)
+strwb_survey$Processing <- strwb_survey$Processing |> 
+                                str_replace( "^MEA.*", "") |> 
+                                str_replace( "^N.*", "") |>
+                                str_replace( "^U.*", "") |>
+                                str_replace( "^B.*", "")
+strwb_survey$Processing[is.na(strwb_survey$Processing)] <- ""
+strwb_survey$temp2 <- strwb_survey$temp2 |> str_replace("^P.*", "")
+strwb_survey$Processing <- strwb_survey$Processing |> str_replace("^PROCESSING - ", "")
+### UTILIZED
+strwb_survey <- strwb_survey |> mutate(Utilized = temp2, .after = temp2)
+strwb_survey$Utilized <- strwb_survey$Utilized |> 
+                                str_replace( "^MEA.*", "") |> 
+                                str_replace( "^N.*", "") |>
+                                str_replace( "^B.*", "")
+strwb_survey$Utilized[is.na(strwb_survey$Utilized)] <- ""
+strwb_survey$temp2 <- strwb_survey$temp2 |> str_replace("^U.*", "")
+strwb_survey$Utilized <- strwb_survey$Utilized |> str_replace("^UTILIZED - ", "")
+### NOT SOLD
+strwb_survey <- strwb_survey |> mutate(`Not Sold` = temp2, .after = temp2)
+strwb_survey$`Not Sold` <- strwb_survey$`Not Sold` |> 
+                                str_replace( "^MEA.*", "") |> 
+                                str_replace( "^B.*", "")
+strwb_survey$`Not Sold`[is.na(strwb_survey$`Not Sold`)] <- ""
+strwb_survey$temp2 <- strwb_survey$temp2 |> str_replace("^N.*", "")
+strwb_survey$`Not Sold` <- strwb_survey$`Not Sold` |> str_replace("^NOT SOLD - ", "")
+### Bearing
+strwb_survey <- strwb_survey |> mutate(Bearing = temp2, .after = temp2)
+strwb_survey$Bearing <- strwb_survey$Bearing |> 
+                                str_replace( "^MEA.*", "") 
+strwb_survey$Bearing[is.na(strwb_survey$Bearing)] <- ""
+strwb_survey$temp2 <- strwb_survey$temp2 |> str_replace("^B.*", "")
+strwb_survey$Bearing <- strwb_survey$Bearing |> str_replace("^BEARING - ", "")
+#strwb_survey |> distinct(temp2)
+## temp2 clear, except MEASURED IN 
+## temp3
+#strwb_survey |> distinct(temp3)
+## temp3 contains "Utilized" and "Measured in xx" to separate
+strwb_survey$temp3[is.na(strwb_survey$temp3)] <- ""  ## prepare for str_detect
+strwb_survey$Utilized[str_detect(strwb_survey$temp3, "^U.*")] <- strwb_survey$temp3[str_detect(strwb_survey$temp3, "^U.*")]
+strwb_survey$temp3 <- strwb_survey$temp3 |> str_replace("^U.*", "")
+#strwb_survey |> distinct(temp3)
+## temp3 clear, except MEASURED IN 
+## combine temp2 and 3
+strwb_survey <- strwb_survey |> unite(temp2, temp3, col="unit_desc", sep="")
+## add "MEASURED IN xx" from temp4
+strwb_survey$temp4[is.na(strwb_survey$temp4)] <- ""
+strwb_survey$unit_desc[str_detect(strwb_survey$temp4, "^MEA.*")] <- strwb_survey$temp4[str_detect(strwb_survey$temp4, "^MEA.*")]
+strwb_survey$temp4 <- strwb_survey$temp4 |> str_replace("^MEA.*", "")
+strwb_survey$Utilized <- strwb_survey$Utilized |> str_replace("^UTILIZED - ", "")
+strwb_survey$unit_desc <- strwb_survey$unit_desc |> str_replace("^MEASURED IN ", "")
+#strwb_survey <- strwb_survey %>% select(-temp3)
+
+```
+
+<!-- Separate Value by units -->
+
+```{r}
+d <- data.frame(dcomma(strwb_survey$Value))
+strwb_survey$Value <- d[,1]
+strwb_survey$fn <- d[,2]
+
+## Separate values by units($, CWT, TONS, LB, etc.)
+strwb_survey$`Value($)` <- ifelse(strwb_survey$unit_desc == "$", strwb_survey$Value, "")
+strwb_survey$`Value(CWT)` <- ifelse(strwb_survey$unit_desc == "CWT", strwb_survey$Value, "")
+strwb_survey$`Value($/CWT)` <- ifelse(strwb_survey$unit_desc == "$ / CWT", strwb_survey$Value, "")
+strwb_survey$`Value(TONS)` <- ifelse(strwb_survey$unit_desc == "TONS", strwb_survey$Value, "")
+strwb_survey$`Value(LB)` <- ifelse(strwb_survey$unit_desc == "LB", strwb_survey$Value, "")
+strwb_survey$`Value(LB/ACRE/APP)` <- ifelse(strwb_survey$unit_desc == "LB / ACRE / APPLICATION", strwb_survey$Value, "")
+strwb_survey$`Value(LB/ACRE/YR)` <- ifelse(strwb_survey$unit_desc == "LB / ACRE / YEAR", strwb_survey$Value, "")
+strwb_survey$`Value(NUMBER)` <- ifelse(strwb_survey$unit_desc == "NUMBER", strwb_survey$Value, "")
+strwb_survey$`Value($/TON)` <- ifelse(strwb_survey$unit_desc == "$ / TON", strwb_survey$Value, "")
+```
+
+<!-- Domain -->
+
+```{r}
+strwb_survey <- strwb_survey |>
+  separate_wider_delim(  cols = Domain,
+                         delim = ",",
+                         names = c("temp22",
+                                 "temp23"),
+                         too_many = "error",
+                         too_few = "align_start"
+                       )
+#t22 <- unique(strwb_survey$temp22)
+#t23 <- unique(strwb_survey$temp23)
+strwb_survey$temp23[is.na(strwb_survey$temp23)] <- ""
+strwb_survey$temp23 <- trimws(strwb_survey$temp23)
+strwb_survey$temp22 <- trimws(strwb_survey$temp22)
+```
+
+<!-- Domain Category & PC code extraction -->
+
+```{r}
+strwb_survey <- strwb_survey |>
+  separate_wider_delim(  cols = `Domain.Category`,
+                         delim = ",",
+                         names = c("temp42",
+                                 "temp43",
+                                 "temp44",
+                                 "temp45"),
+                         too_many = "error",
+                         too_few = "align_start"
+                       )
+
+### Extract PC codes from temp43-45
+strwb_survey$PC_t43 <- str_extract_all(strwb_survey$temp43, "= \\d+")
+strwb_survey$PC_t44 <- str_extract_all(strwb_survey$temp44, "= \\d+")
+strwb_survey$PC_t45 <- str_extract_all(strwb_survey$temp45, "= \\d+")
+strwb_survey$PC_t43 <- gsub("= ", "", strwb_survey$PC_t43)
+strwb_survey$PC_t44 <- gsub("= ", "", strwb_survey$PC_t44)
+strwb_survey$PC_t45 <- gsub("= ", "", strwb_survey$PC_t45)
+### substitute NAs
+strwb_survey$PC_t43[is.na(strwb_survey$PC_t43)] <- ""
+strwb_survey$PC_t44[is.na(strwb_survey$PC_t44)] <- ""
+strwb_survey$PC_t45[is.na(strwb_survey$PC_t45)] <- ""
+### combine t43-45 into PC code
+
+strwb_survey <- strwb_survey |> unite(PC_t43, PC_t44, col="PC code", sep="")
+strwb_survey <- strwb_survey |> unite(`PC code`, PC_t45, col="PC code", sep="")
+strwb_survey$`PC code` <- gsub("character(0)", "", strwb_survey$`PC code`)
+
+```
+
+<!-- PC code into CAS number -->
+
+```{r}
+library(httr)
+library(jsonlite)
+
+cas <- function(c){
+    path <- paste0("https://ordspub.epa.gov/ords/pesticides/apprilapi/?q=%7b%22ais%22:%7b%22$instr%22:%22",c,"%22%7d%7d")
+    r <- GET(url = path)
+    status_code(r)
+    str(content(r))
+    r_text <- content(r, as = "text", encoding = "UTF-8")
+    df <- fromJSON(r_text,flatten = TRUE)
+}
+
+```
+
+
+<!-- Separate survey into chem and market(mkt) -->
+
+```{r}
+strwb_survey_chem <- strwb_survey |> filter((temp22 == "CHEMICAL") | (temp42 == "CHEMICAL"))
+strwb_survey_mkt <- strwb_survey |> filter(!((temp22 == "CHEMICAL") | (temp42 == "CHEMICAL")))
+strwb_survey_mkt <- strwb_survey_mkt %>% select_if(~length(unique(.)) > 1)
+strwb_survey_chem <- strwb_survey_chem %>% select_if(~length(unique(.)) > 1)
+#strwb_survey |> distinct(temp45)
+```
+
+
+
 
 
 ## References
