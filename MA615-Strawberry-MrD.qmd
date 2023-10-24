@@ -296,16 +296,6 @@ d <- data.frame(dcomma(strwb_survey$Value))
 strwb_survey$Value <- d[,1]
 strwb_survey$fn <- d[,2]
 
-# ## Separate values by units($, CWT, TONS, LB, etc.)
-# strwb_survey$`Value($)` <- ifelse(strwb_survey$unit_desc == "$", strwb_survey$Value, "")
-# strwb_survey$`Value(CWT)` <- ifelse(strwb_survey$unit_desc == "CWT", strwb_survey$Value, "")
-# strwb_survey$`Value($/CWT)` <- ifelse(strwb_survey$unit_desc == "$ / CWT", strwb_survey$Value, "")
-# strwb_survey$`Value(TONS)` <- ifelse(strwb_survey$unit_desc == "TONS", strwb_survey$Value, "")
-# strwb_survey$`Value(LB)` <- ifelse(strwb_survey$unit_desc == "LB", strwb_survey$Value, "")
-# strwb_survey$`Value(LB/ACRE/APP)` <- ifelse(strwb_survey$unit_desc == "LB / ACRE / APPLICATION", strwb_survey$Value, "")
-# strwb_survey$`Value(LB/ACRE/YR)` <- ifelse(strwb_survey$unit_desc == "LB / ACRE / YEAR", strwb_survey$Value, "")
-# strwb_survey$`Value(NUMBER)` <- ifelse(strwb_survey$unit_desc == "NUMBER", strwb_survey$Value, "")
-# strwb_survey$`Value($/TON)` <- ifelse(strwb_survey$unit_desc == "$ / TON", strwb_survey$Value, "")
 ```
 
 <!-- Domain -->
@@ -344,7 +334,8 @@ library(jsonlite)
 
 get_cas <- function(PC){
     PC <- sprintf("%06d", as.numeric(PC))
-    path <- paste0("https://ordspub.epa.gov/ords/pesticides/apprilapi/?q=%7b%22ais%22:%7b%22$instr%22:%22", PC,"%22%7d%7d")
+    path <- paste0("https://ordspub.epa.gov/ords/pesticides/apprilapi/?q=%7b%22ais%22:%7b%22$instr%22:%22", 
+                   PC,"%22%7d%7d")
     r <- GET(url = path)
     r_text <- content(r, as = "text", encoding = "UTF-8")
     df <- fromJSON(r_text, flatten = TRUE)
@@ -361,7 +352,7 @@ get_cas <- function(PC){
         return("can't find")
 }
 }
-## Create a dictionary for PC code to CAS num
+## Create a dictionary for PC code to CAS number
 PC <- unique(strwb_survey$PC)[-1]
 n = length(PC)
 dic <- data.frame(PC, CAS = rep(NA,n))
@@ -369,23 +360,69 @@ dic <- data.frame(PC, CAS = rep(NA,n))
 for(i in 1:n){
    dic$CAS[i] <- get_cas(PC[i])
 }
+## Dictionary Fix
 dic$CAS[130] <- "can't find"
-
+dic$CAS[79] <- "8002-65-1"
+dic$CAS[85] <- "8003-34-7"
+dic$CAS[109] <- "can't find"
+dic$CAS[98] <- "76674-21-0"
+dic$CAS[69] <- "39515-41-8"
+dic$CAS[9] <- "188425-85-6"
+dic$CAS[163] <- "57754-85-5"
+dic$CAS[141] <- "32341-80-3"
+dic$CAS[94] <- "124-07-2"
+dic$CAS[121] <- "133-32-4"
+dic$CAS[96] <- "76-06-2"
+dic$CAS[35] <- "23564-05-8"
+dic$CAS[136] <- "can't find"
+dic$CAS[83] <- "51-03-6"
+dic$CAS[100] <- "7722-84-1"
+dic$CAS[95] <- "8023-77-6"
+dic$CAS[82] <- "64742-89-8"
+## The fix above is just a rough check for function get_cas(); 
+## As shown, the function cannot always return correct results, 
+## further modification required;
+## Since little time left, I will leave this part unfinished, 
+## transfer no CAS num into toxicity rate, and discuss later on.
+## This procedure reminds us how important double check is
 strwb_survey <- left_join(strwb_survey, dic, by= "PC")
 ```
 
 <!-- CAS number to toxicity class -->
 
+I will complete this part after getting all PC-CAS conversion correctly.
+
+
+## Exploratory Data Analysis
+
+
 ```{r}
-# strwb_survey_chem <- strwb_survey |> filter((temp22 == "CHEMICAL") | (temp42 == "CHEMICAL"))
-# strwb_survey_mkt <- strwb_survey |> filter(!((temp22 == "CHEMICAL") | (temp42 == "CHEMICAL")))
-# strwb_survey_mkt <- strwb_survey_mkt %>% select_if(~length(unique(.)) > 1)
-# strwb_survey_chem <- strwb_survey_chem %>% select_if(~length(unique(.)) > 1)
-# #strwb_survey |> distinct(temp45)
+# state_all <- strawberry |> group_by(State) |> count()
+# state_all <- subset(state_all, State != "OTHER STATES")
+## Strawberry production in California and Florida are exceptionally high since they appear much more than other states.
+## Percentile for organic production in each state
+# state_all_census <- strwb_census |> group_by(State) |> count()
+# organic <- data.frame(state_all$State, c(state_all_census[,2] / state_all[,2]))
+
+LB <- strwb_survey %>%
+  filter(unit_desc == 'LB' & Value>0 )
+
+LB %>%
+  ggplot(aes(x=temp23, y=log(Value), fill=temp23)) +
+    geom_violin() +
+    theme_classic() +
+    theme()+
+  labs(title = "Violin Plot for Chemical Usage", xlab = "Chemical Types", ylab = "Chemical Usage(LB)")
 ```
 
-
-
-
-
 ## References
+
+[USDA NASS](https://quickstats.nass.usda.gov/)
+
+[EPA Pesticide Product and Label System](https://ordspub.epa.gov/ords/pesticides/f?p=PPLS:1)
+
+[PPLS API](https://www.epa.gov/pesticide-labels/pesticide-product-label-system-ppls-application-program-interface-api)
+
+[Abbreviation](https://quickstats.nass.usda.gov/src/glossary.pdf)
+
+[Column Definitions](https://quickstats.nass.usda.gov/param_define)
